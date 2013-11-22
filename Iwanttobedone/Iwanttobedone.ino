@@ -17,13 +17,13 @@
 #define audioPin 9 //Clicks and Alarm
 #define AMtransmitPin 10 //Same signal as audioPin 9
 #define LEDPin 11 //For Brake and Signal lights (alarm only manual otherwise)
-#define echoPin 2 // Echo Pin
-#define trigPin 3 // Trigger Pin
+#define echoPinOne  2// Echo Pin
+#define trigPinOne  3// Trigger Pin
 #define echoPinTwo 4 // Echo Pin
 #define trigPinTwo 5 // Trigger Pin
 #define echoPinThree 6 // Echo Pin
 #define trigPinThree 7 // Trigger Pin
-#define alarmPin 0
+#define alarmPin 8
 int passiveCircuitVal = 0;  //We may want to change these val and count are ambiguous
 boolean alarmIsCut = false;
 //=============================
@@ -32,8 +32,9 @@ boolean alarmIsCut = false;
 int buttonVal = 0;
 int valueTrack[1] = {0};
 int disarmCode[4] = {4,2,3,1};
-int armCode[4] = {1,3,2,4};
+int armCode[4] = {3,1,4,2};
 int runningCode[4] = {0,0,0,0};
+int count = 0;
 
 boolean LOCKED = true;
 //=====================================
@@ -61,7 +62,7 @@ boolean alarmState = false;
 
 int maximumRange = 200; // Maximum range needed
 int minimumRange = 0; // Minimum range needed
-long duration, distance; // Duration used to calculate distance
+long durationOne, durationTwo, durationThree, distanceOne, distanceTwo, distanceThree; // Duration used to calculate distance
 
 int n = 1;  //What is this variable for
 
@@ -70,8 +71,12 @@ LiquidCrystal_I2C       lcd(I2C_ADDR,En_pin,Rw_pin,Rs_pin,D4_pin,D5_pin,D6_pin,D
 //====================Start of Arduino main loop============================================
 void setup() {
  Serial.begin (9600);
- pinMode(trigPin, OUTPUT);
- pinMode(echoPin, INPUT);
+ pinMode(trigPinOne, OUTPUT);
+ pinMode(echoPinOne, INPUT);
+ pinMode(trigPinTwo, OUTPUT);
+ pinMode(echoPinTwo, INPUT);
+ pinMode(trigPinThree, OUTPUT);
+ pinMode(echoPinThree, INPUT);
  
  lcd.begin (20,4);
   
@@ -83,7 +88,9 @@ void setup() {
  lcd.print("Welcome to BATSS"); 
  
   pinMode(alarmPin,INPUT);
+  pinMode(LEDPin, OUTPUT);
   pinMode(audioPin, OUTPUT);
+  pinMode(12, OUTPUT);
   pinMode(A1,INPUT);  
 }
 
@@ -114,21 +121,49 @@ void loop()
     
       if(cycleCheck(&alarmLastMillis, alarmCycle))
       {
+        Serial.println("LOCK CIRCUIT LIVE");
         passiveCircuitVal = digitalRead(alarmPin);
-        if (passiveCircuitVal != 0)
+        if (passiveCircuitVal == 1)
         {  
-           alarmIsCut = true; 
+          count++;
+           
         }
-      }
+        if (count > 0)
+        {
+        
+        alarmIsCut = true; 
+        Serial.println("ALARM CUT");
+        
+        }
+      
+     }
       
       //Stuff to do when alarm is cut
       //MUST HAVE DISABLE FUNCTION BECAUSE BUTTON READ ALWAYS RUNNING. DISABLE ALARM CUTS OFF GSM/LIGHTS/SOUND
       if(alarmIsCut) 
       {
-        //Start GSM Shield and send out text message
-        //Blink LEDs and Brake Lights using blink(). Pin 2
-        //Audio signal sent to speakers Pin 9
-      }
+        
+        while(LOCKED)
+        {
+            buttonVal = analogRead(A1);
+            delay(10);
+            // to counter numbers like 121 122 123 120 121 122
+            if((buttonVal > 0) && (buttonVal < 1000))
+            {
+              if((valueTrack[0] > buttonVal+40)||(valueTrack[0] < buttonVal-40))
+               {
+                  Serial.print(buttonVal);
+                  systemArming(convertButton(buttonVal));
+                  valueTrack[0]=buttonVal;
+                }
+            }
+            //Start GSM Shield and send out text message
+            //Blink LEDs and Brake Lights using blink(). Pin 2
+            //Audio signal sent to speakers Pin 9
+            audioAlarm();
+            lightAlarm();
+        }
+      }      
         
   }
   //IF THE SYSTEM IS UNLOCKED
@@ -148,11 +183,10 @@ void loop()
       //This code updates the LCD screen
       if(cycleCheck(&LCDLastMillis, LCDCycle))
       {
-         if ( distance <= minimumRange)
+         if ( distanceThree <= minimumRange)
          {
           /* Send a negative number to computer and Turn LED ON 
            to indicate "out of range" */
-           Serial.println(distance);
            lcd.setCursor (14,3);        // go col 14 of line 3
            lcd.print(-1,DEC);
          }
@@ -163,27 +197,27 @@ void loop()
            //Serial.println(distance);
            lcd.setCursor (14,3);        // go col 14 of line 3
          
-         if(distance < 10)
-         { lcd.print(distance);
+         if(distanceThree < 10)
+         { lcd.print(distanceThree);
             lcd.print("   "); 
-            toneCycle = (distance/3);
+            toneCycle = (distanceThree/3);
          }
-         else if(distance < 100)
+         else if(distanceThree < 100)
          {
-            lcd.print(distance);
+            lcd.print(distanceThree);
             lcd.print("  "); 
             tone(9,4000,2);
-            toneCycle = distance/3;
+            toneCycle = distanceThree/3;
          }
-         else if(distance < 1000)
+         else if(distanceThree < 1000)
          {
-           lcd.print(distance);
+           lcd.print(distanceThree);
            lcd.print(" "); 
-           toneCycle = distance/3 ;
+           toneCycle = distanceThree/3 ;
          }
-         else if(distance < 10000)
+         else if(distanceThree < 10000)
          {
-           lcd.print(distance);
+           lcd.print(distanceThree);
          }
       }
         LCDState = !LCDState;
@@ -193,17 +227,40 @@ void loop()
       
       if(cycleCheck(&ultrasonicLastMillis, ultrasonicCycle))
       {
-         digitalWrite(trigPin, LOW);
-         delay(2);
+       digitalWrite(trigPinOne, LOW);
+       delay(2);
+       digitalWrite(trigPinOne, HIGH);
+       delay(10);
+       digitalWrite(trigPinOne, LOW);
+       durationOne = pulseIn(echoPinOne, HIGH, 120000);
+       
+       digitalWrite(trigPinTwo, LOW);
+       delay(2);
+       digitalWrite(trigPinTwo, HIGH);
+       delay(10);
+       digitalWrite(trigPinTwo, LOW);
+       durationTwo = pulseIn(echoPinTwo, HIGH, 120000);
+       
+       digitalWrite(trigPinThree, LOW);
+       delay(2);
+       digitalWrite(trigPinThree, HIGH);
+       delay(10);
+       digitalWrite(trigPinThree, LOW);
+       durationThree = pulseIn(echoPinThree, HIGH, 120000);
   
-         digitalWrite(trigPin, HIGH);
-         delay(10);
-   
-         digitalWrite(trigPin, LOW);
-         duration = pulseIn(echoPin, HIGH);
-         distance = duration/58.2;
-         ultrasonicState = !ultrasonicState;
-      }    
+       distanceOne = durationOne/58.2;
+       distanceTwo = durationTwo/58.2;
+       distanceThree = durationThree/58.2;
+       
+       Serial.print("South-West: ");
+       Serial.print(distanceOne);
+       Serial.print(" | South: ");
+       Serial.print(distanceThree);
+       Serial.print(" | South-East: ");
+       Serial.println(distanceTwo);
+       
+       tone(9, 800, distanceThree);
+      }
     }
 }
 
@@ -236,7 +293,7 @@ boolean systemArming(int x)
     runningCode[0] = x;
     lcd.clear();
     lcd.print("Entered: ");
-    lcd.print(runningCode[0]); 
+    lcd.print(runningCode[0]);
     return true;
   }
   else if(runningCode[1]==0)
@@ -245,7 +302,7 @@ boolean systemArming(int x)
     lcd.clear();
     lcd.print("Entered: ");
     lcd.print(runningCode[0]);
-    lcd.print(runningCode[1]); 
+    lcd.print(runningCode[1]);
     return true;
   }
   else if(runningCode[2]==0)
@@ -255,7 +312,7 @@ boolean systemArming(int x)
     lcd.print("Entered: ");
     lcd.print(runningCode[0]);
     lcd.print(runningCode[1]);
-    lcd.print(runningCode[2]); 
+    lcd.print(runningCode[2]);
     return true;
   }
   else if(runningCode[3]==0)
@@ -263,10 +320,10 @@ boolean systemArming(int x)
     runningCode[3] = x;
     lcd.clear();
     lcd.print("Entered: ");
-    lcd.print(runningCode[0]); 
-    lcd.print(runningCode[1]); 
-    lcd.print(runningCode[2]); 
-    lcd.print(runningCode[3]); 
+    lcd.print(runningCode[0]);
+    lcd.print(runningCode[1]);
+    lcd.print(runningCode[2]);
+    lcd.print(runningCode[3]);
     codeCheck();
     return true;
   }
@@ -292,7 +349,7 @@ boolean codeCheck()
         {
           Serial.println("Code Match: Security System Disarmed...");
           lcd.clear();
-          lcd.print("SYSTEM IS ARMED"); 
+          lcd.print("SYSTEM IS DISARMED"); 
           antiTheftDisable();
           clearRunningCode();
           return true;
@@ -310,7 +367,7 @@ boolean codeCheck()
           {
             Serial.println("Code Match: Security System Armed...");
             lcd.clear();
-            lcd.print("SYSTEM IS UNARMED"); 
+            lcd.print("SYSTEM IS ARMED"); 
             antiTheftEnable();
             clearRunningCode();
             return true;
@@ -348,6 +405,7 @@ void antiTheftEnable()
   
   //Set the Locked variable to true
   LOCKED = true;
+  
 }
 //Called when the 4 digit code entered matches the LOCK code. This function sets the global var "Locked"
 void antiTheftDisable()
@@ -397,22 +455,28 @@ int convertButton(int aReadInput)
 //=============================Begin Code for Alarm Cut ====================================
 void audioAlarm()
 {
-  tone(9, 500, 500);
-  delay(600);
-  tone(9, 700, 500);
+  tone(9, 800, 500);
   delay(600);
   tone(9, 500, 500);
   delay(600);
-  tone(9, 700, 500);
+  tone(9, 800, 500);
   delay(600);
   tone(9, 500, 500);
   delay(600);
-  tone(9, 700, 500);
+  tone(9, 800, 500);
+  delay(600);
+  tone(9, 500, 500);
+  delay(600);
+  tone(9, 800, 500);
   delay(600);
 }
 void lightAlarm()
 {
   //Pin 11 Blink
+  digitalWrite(12, HIGH);   // turn the LED on (HIGH is the voltage level)
+  delay(20);               // wait for a second
+  digitalWrite(12, LOW);    // turn the LED off by making the voltage LOW
+  delay(20);    
 }
 
 void GSMShieldActivate()
